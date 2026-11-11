@@ -1,0 +1,952 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>音ゲー譜面プレビューワー (Rhythm Game Chart Previewer)</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- Custom Font -->
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Noto+Sans+JP:wght@400;600;700&display=swap" rel="stylesheet">
+  <style>
+    body {
+      font-family: 'Noto Sans JP', sans-serif;
+      background-color: #090a10;
+      color: #f3f4f6;
+    }
+    .font-orbitron {
+      font-family: 'Orbitron', sans-serif;
+    }
+    /* Neon Glow Utilities */
+    .glow-cyan {
+      box-shadow: 0 0 15px rgba(6, 182, 212, 0.6);
+    }
+    .glow-magenta {
+      box-shadow: 0 0 15px rgba(236, 72, 153, 0.6);
+    }
+    .glow-yellow {
+      box-shadow: 0 0 15px rgba(234, 179, 8, 0.6);
+    }
+    /* Custom Scrollbar */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #111827;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #374151;
+      border-radius: 3px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #4b5563;
+    }
+  </style>
+</head>
+<body class="h-screen w-screen overflow-hidden flex flex-col md:flex-row bg-slate-950 text-slate-100">
+
+  <!-- 左側 / 上部：メインキャンバスエリア -->
+  <div class="relative flex-1 h-full flex flex-col items-center justify-center p-2 md:p-4 bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950">
+    
+    <!-- ヘッダー情報オーバーレイ -->
+    <div class="absolute top-4 left-4 right-4 z-10 flex justify-between items-start pointer-events-none">
+      <div class="bg-slate-900/80 backdrop-blur border border-slate-800 p-3 rounded-xl pointer-events-auto max-w-xs md:max-w-md shadow-xl">
+        <h1 id="songTitle" class="text-lg md:text-xl font-bold font-orbitron text-cyan-400 truncate">Song Title</h1>
+        <div class="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-400 mt-1">
+          <div>BPM: <span id="infoBpm" class="text-slate-200 font-semibold">170</span></div>
+          <div>Lanes: <span id="infoLanes" class="text-slate-200 font-semibold">4</span></div>
+          <div>Total Notes: <span id="infoNotes" class="text-slate-200 font-semibold">0</span></div>
+          <div>Offset: <span id="infoOffset" class="text-slate-200 font-semibold">0ms</span></div>
+        </div>
+      </div>
+
+      <!-- 現在の速度（ソフラン表示） -->
+      <div class="bg-slate-900/80 backdrop-blur border border-slate-800 px-4 py-2 rounded-xl pointer-events-auto text-right shadow-xl">
+        <div class="text-xs text-slate-400 uppercase tracking-wider font-semibold">Current Speed</div>
+        <div id="currentSpeedDisplay" class="text-xl md:text-2xl font-bold font-orbitron text-yellow-400">1.0x</div>
+      </div>
+    </div>
+
+    <!-- ゲームビューポート（キャンバス）容器 -->
+    <div class="relative w-full h-full max-w-lg flex items-center justify-center">
+      <canvas id="chartCanvas" class="w-full h-full max-h-[90vh] bg-slate-900/90 rounded-2xl border border-slate-800 shadow-2xl"></canvas>
+    </div>
+
+  </div>
+
+  <!-- 右側 / 下部：コントロール＆設定パネル -->
+  <div class="w-full md:w-96 bg-slate-900/95 border-t md:border-t-0 md:border-l border-slate-800 flex flex-col justify-between p-4 md:p-6 z-20 shadow-2xl overflow-y-auto">
+    
+    <div class="space-y-6">
+      <!-- タイトル/ロゴ -->
+      <div class="flex items-center gap-3 border-b border-slate-800 pb-4">
+        <div class="p-2 bg-cyan-500/10 border border-cyan-500/30 rounded-lg text-cyan-400">
+          <i data-lucide="music-4" class="w-6 h-6"></i>
+        </div>
+        <div>
+          <h2 class="font-orbitron font-bold text-base text-cyan-400 tracking-wider">CHART PREVIEWER</h2>
+          <p class="text-xs text-slate-400">Rhythm Game Viewer Engine</p>
+        </div>
+      </div>
+
+      <!-- ファイル読み込みセクション -->
+      <div class="space-y-3">
+        <label class="text-xs font-semibold uppercase tracking-wider text-slate-400 block">Files Input</label>
+        
+        <!-- JSON Chart File -->
+        <div class="space-y-1">
+          <label class="text-xs text-slate-300 flex justify-between">
+            <span>Chart JSON</span>
+            <span id="chartFileName" class="text-cyan-400 truncate max-w-[150px]">Åbstract √futuЯe.json</span>
+          </label>
+          <label class="flex items-center justify-center w-full px-3 py-2 bg-slate-800 hover:bg-slate-700/80 border border-slate-700 border-dashed rounded-xl cursor-pointer transition text-xs text-slate-300 gap-2">
+            <i data-lucide="file-json" class="w-4 h-4 text-cyan-400"></i>
+            <span>Upload JSON Chart</span>
+            <input type="file" id="jsonFileInput" accept=".json" class="hidden">
+          </label>
+        </div>
+
+        <!-- Audio File (Optional) -->
+        <div class="space-y-1">
+          <label class="text-xs text-slate-300 flex justify-between">
+            <span>Audio File (Optional)</span>
+            <span id="audioFileName" class="text-slate-500 truncate max-w-[150px]">None (Synthesized)</span>
+          </label>
+          <label class="flex items-center justify-center w-full px-3 py-2 bg-slate-800 hover:bg-slate-700/80 border border-slate-700 border-dashed rounded-xl cursor-pointer transition text-xs text-slate-300 gap-2">
+            <i data-lucide="music" class="w-4 h-4 text-pink-400"></i>
+            <span>Upload MP3 / WAV</span>
+            <input type="file" id="audioFileInput" accept="audio/*" class="hidden">
+          </label>
+        </div>
+      </div>
+
+      <!-- プレイヤーコントローラー -->
+      <div class="space-y-4 bg-slate-950/50 p-4 rounded-xl border border-slate-800/80">
+        <!-- 再生プログレスバー -->
+        <div class="space-y-1">
+          <div class="flex justify-between text-xs font-orbitron text-slate-400">
+            <span id="currentTimeDisplay">00:00.00</span>
+            <span id="totalTimeDisplay">00:00.00</span>
+          </div>
+          <input type="range" id="seekSlider" min="0" max="100" value="0" step="0.01" class="w-full accent-cyan-400 bg-slate-800 h-2 rounded-lg cursor-pointer">
+        </div>
+
+        <!-- 再生・停止ボタン -->
+        <div class="flex items-center justify-center gap-3">
+          <button id="btnStop" class="p-3 bg-slate-800 hover:bg-slate-700 active:scale-95 text-slate-300 rounded-xl transition">
+            <i data-lucide="square" class="w-5 h-5"></i>
+          </button>
+          <button id="btnPlayPause" class="p-4 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 active:scale-95 text-white font-bold rounded-2xl shadow-lg glow-cyan transition flex items-center justify-center">
+            <i id="iconPlayPause" data-lucide="play" class="w-6 h-6 fill-current"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- ディスプレイ & 速度設定 -->
+      <div class="space-y-4">
+        <label class="text-xs font-semibold uppercase tracking-wider text-slate-400 block">Preview Settings</label>
+        
+        <!-- ソフラン単位(Sample Mode) 設定 & 自由入力 -->
+        <div class="space-y-2">
+          <label class="text-xs text-slate-300 block">Soflan Sample Unit (1/sec)</label>
+          <div class="grid grid-cols-1 gap-2">
+            <select id="sampleModeSelect" class="w-full bg-slate-800 border border-slate-700 text-xs text-slate-200 rounded-lg p-2 font-orbitron focus:outline-none focus:border-cyan-500">
+              <option value="44100" selected>44.1 kHz (Audio Sample)</option>
+              <option value="48000">48.0 kHz (Audio Sample)</option>
+              <option value="1000000">Microseconds (1,000,000 /s)</option>
+              <option value="1000">Milliseconds (1,000 /s)</option>
+              <option value="custom">Custom Value...</option>
+            </select>
+            <!-- Custom Sample Rate Input -->
+            <div id="customSampleContainer" class="flex items-center gap-2">
+              <div class="relative flex-1">
+                <input type="number" id="customSampleInput" value="44100" min="1" step="1" class="w-full bg-slate-950 border border-slate-700 text-xs text-cyan-400 rounded-lg px-3 py-2 font-orbitron focus:outline-none focus:border-cyan-500" placeholder="e.g. 44100">
+              </div>
+              <span class="text-xs text-slate-400 font-orbitron">Hz / units</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- ハイスピード (Hi-Speed Multiplier) -->
+        <div class="space-y-1">
+          <div class="flex justify-between text-xs">
+            <span class="text-slate-300">Hi-Speed Multiplier</span>
+            <span id="hiSpeedVal" class="text-cyan-400 font-orbitron font-semibold">2.5x</span>
+          </div>
+          <input type="range" id="hiSpeedSlider" min="0.5" max="5.0" value="2.5" step="0.1" class="w-full accent-cyan-400 bg-slate-800 h-1.5 rounded-lg cursor-pointer">
+        </div>
+
+        <!-- カメラチルト角 (Camera Tilt Angle: 0° = 3D Perspective, 90° = 2D Vertical) -->
+        <div class="space-y-1">
+          <div class="flex justify-between text-xs">
+            <span class="text-slate-300">Camera Tilt (3D ⇄ 2D)</span>
+            <span id="tiltVal" class="text-cyan-400 font-orbitron font-semibold">30°</span>
+          </div>
+          <input type="range" id="tiltSlider" min="0" max="90" value="30" step="1" class="w-full accent-cyan-400 bg-slate-800 h-1.5 rounded-lg cursor-pointer">
+        </div>
+
+        <!-- 再生速度 (Playback Speed Rate) -->
+        <div class="space-y-1">
+          <div class="flex justify-between text-xs">
+            <span class="text-slate-300">Playback Rate</span>
+            <span id="rateVal" class="text-cyan-400 font-orbitron font-semibold">1.0x</span>
+          </div>
+          <div class="grid grid-cols-4 gap-2">
+            <button class="btnRate px-2 py-1.5 bg-slate-800 hover:bg-slate-700 text-xs rounded-lg transition font-orbitron border border-slate-700" data-rate="0.5">0.5x</button>
+            <button class="btnRate px-2 py-1.5 bg-slate-800 hover:bg-slate-700 text-xs rounded-lg transition font-orbitron border border-slate-700 active-rate bg-cyan-500/20 text-cyan-400 border-cyan-500/50" data-rate="1.0">1.0x</button>
+            <button class="btnRate px-2 py-1.5 bg-slate-800 hover:bg-slate-700 text-xs rounded-lg transition font-orbitron border border-slate-700" data-rate="1.5">1.5x</button>
+            <button class="btnRate px-2 py-1.5 bg-slate-800 hover:bg-slate-700 text-xs rounded-lg transition font-orbitron border border-slate-700" data-rate="2.0">2.0x</button>
+          </div>
+        </div>
+
+        <!-- オーディオオフセット調整 -->
+        <div class="space-y-1">
+          <div class="flex justify-between text-xs">
+            <span class="text-slate-300">Chart Offset Adjust (ms)</span>
+            <span id="offsetVal" class="text-cyan-400 font-orbitron font-semibold">0 ms</span>
+          </div>
+          <input type="range" id="offsetSlider" min="-500" max="500" value="0" step="5" class="w-full accent-cyan-400 bg-slate-800 h-1.5 rounded-lg cursor-pointer">
+        </div>
+
+        <!-- ノーツ種類凡例 (Legend) -->
+        <div class="pt-2 border-t border-slate-800">
+          <label class="text-xs font-semibold uppercase tracking-wider text-slate-400 block mb-2">Note Types</label>
+          <div class="grid grid-cols-2 gap-2 text-xs">
+            <div class="flex items-center gap-2 bg-slate-800/50 p-2 rounded-lg border border-slate-800">
+              <span class="w-3 h-3 rounded bg-cyan-400 shadow-[0_0_8px_#22d3ee]"></span>
+              <span class="text-slate-300">Normal (Type 1)</span>
+            </div>
+            <div class="flex items-center gap-2 bg-slate-800/50 p-2 rounded-lg border border-slate-800">
+              <span class="w-3 h-3 rounded bg-blue-500 shadow-[0_0_8px_#3b82f6]"></span>
+              <span class="text-slate-300">Long (Type 2)</span>
+            </div>
+            <div class="flex items-center gap-2 bg-slate-800/50 p-2 rounded-lg border border-slate-800">
+              <span class="w-3 h-3 rounded bg-yellow-400 shadow-[0_0_8px_#facc15]"></span>
+              <span class="text-slate-300">Space (Type 3)</span>
+            </div>
+            <div class="flex items-center gap-2 bg-slate-800/50 p-2 rounded-lg border border-slate-800">
+              <span class="w-3 h-3 rounded bg-pink-500 shadow-[0_0_8px_#ec4899]"></span>
+              <span class="text-slate-300">Space Long (Type 4)</span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- フッター情報 -->
+    <div class="mt-6 pt-4 border-t border-slate-800 text-center text-xs text-slate-500">
+      Rhythm Game Chart Previewer &bull; Canvas Engine
+    </div>
+  </div>
+
+  <!-- JavaScript Engine -->
+  <script>
+    // --- デフォルトサンプル譜面 (User Provided Data) ---
+    const DEFAULT_CHART_DATA = {
+      "name": "Åbstract √futuЯe",
+      "maxBlock": 4,
+      "BPM": 171.0,
+      "offset": 0,
+      "notes": [
+        {"LPB":4,"num":16,"block":0,"type":2,"notes":[{"LPB":4,"num":32,"block":0,"type":2,"notes":[]}]},
+        {"LPB":8,"num":32,"block":3,"type":2,"notes":[{"LPB":8,"num":38,"block":3,"type":2,"notes":[]}]},
+        {"LPB":8,"num":32,"block":2,"type":1,"notes":[]},
+        {"LPB":8,"num":32,"block":1,"type":1,"notes":[]},
+        {"LPB":8,"num":44,"block":1,"type":2,"notes":[{"LPB":8,"num":70,"block":1,"type":2,"notes":[]}]},
+        {"LPB":8,"num":48,"block":2,"type":2,"notes":[{"LPB":8,"num":80,"block":2,"type":2,"notes":[]}]},
+        {"LPB":4,"num":32,"block":3,"type":2,"notes":[{"LPB":4,"num":48,"block":3,"type":2,"notes":[]}]},
+        {"LPB":8,"num":76,"block":0,"type":2,"notes":[{"LPB":8,"num":96,"block":0,"type":2,"notes":[]}]},
+        {"LPB":8,"num":94,"block":2,"type":2,"notes":[{"LPB":8,"num":108,"block":2,"type":2,"notes":[]}]},
+        {"LPB":4,"num":48,"block":1,"type":2,"notes":[{"LPB":4,"num":64,"block":1,"type":2,"notes":[]}]},
+        {"LPB":8,"num":102,"block":3,"type":2,"notes":[{"LPB":8,"num":112,"block":3,"type":2,"notes":[]}]},
+        {"LPB":8,"num":118,"block":0,"type":2,"notes":[{"LPB":8,"num":124,"block":0,"type":2,"notes":[]}]},
+        {"LPB":8,"num":126,"block":3,"type":2,"notes":[{"LPB":8,"num":140,"block":3,"type":2,"notes":[]}]},
+        {"LPB":4,"num":64,"block":2,"type":2,"notes":[{"LPB":4,"num":80,"block":2,"type":2,"notes":[]}]},
+        {"LPB":8,"num":134,"block":0,"type":2,"notes":[{"LPB":8,"num":144,"block":0,"type":2,"notes":[]}]},
+        {"LPB":32,"num":639,"block":3,"type":1,"notes":[]},
+        {"LPB":8,"num":160,"block":0,"type":3,"notes":[]},
+        {"LPB":32,"num":641,"block":1,"type":1,"notes":[]},
+        {"LPB":32,"num":642,"block":0,"type":1,"notes":[]},
+        {"LPB":8,"num":192,"block":0,"type":3,"notes":[]},
+        {"LPB":8,"num":224,"block":0,"type":4,"notes":[{"LPB":8,"num":225,"block":0,"type":4,"notes":[]}]},
+        {"LPB":8,"num":256,"block":0,"type":4,"notes":[{"LPB":8,"num":318,"block":0,"type":4,"notes":[]}]},
+        {"LPB":8,"num":320,"block":0,"type":3,"notes":[]},
+        {"LPB":8,"num":328,"block":0,"type":1,"notes":[]},
+        {"LPB":8,"num":328,"block":3,"type":1,"notes":[]},
+        {"LPB":8,"num":330,"block":2,"type":1,"notes":[]},
+        {"LPB":8,"num":332,"block":1,"type":1,"notes":[]},
+        {"LPB":8,"num":334,"block":3,"type":1,"notes":[]},
+        {"LPB":8,"num":334,"block":0,"type":1,"notes":[]},
+        {"LPB":8,"num":336,"block":3,"type":1,"notes":[]},
+        {"LPB":8,"num":336,"block":0,"type":1,"notes":[]},
+        {"LPB":8,"num":338,"block":2,"type":1,"notes":[]},
+        {"LPB":8,"num":340,"block":1,"type":1,"notes":[]},
+        {"LPB":8,"num":342,"block":0,"type":1,"notes":[]},
+        {"LPB":8,"num":342,"block":3,"type":1,"notes":[]},
+        {"LPB":8,"num":344,"block":3,"type":1,"notes":[]},
+        {"LPB":8,"num":344,"block":0,"type":1,"notes":[]},
+        {"LPB":8,"num":344,"block":1,"type":3,"notes":[]}
+      ],
+      "speedChanges": [
+        {"sample":538947,"speed":10.0},
+        {"sample":473684,"speed":0.01},
+        {"sample":640000,"speed":1.0},
+        {"sample":587925,"speed":10.0},
+        {"sample":587912,"speed":10.0},
+        {"sample":648421,"speed":3.0},
+        {"sample":652631,"speed":7.0},
+        {"sample":656842,"speed":1.0},
+        {"sample":665263,"speed":1.0},
+        {"sample":669473,"speed":1.0},
+        {"sample":563913,"speed":3.0},
+        {"sample":690526,"speed":1.0},
+        {"sample":688421,"speed":1.5},
+        {"sample":684210,"speed":2.0},
+        {"sample":675789,"speed":1.5},
+        {"sample":677894,"speed":3.0}
+      ]
+    };
+
+    // --- State Variables ---
+    let chartData = null;
+    let parsedNotes = [];
+    let parsedSpeedChanges = [];
+    let sampleRateUnit = 44100; // Sample rate divisor for sample -> time conversion
+    let audioBuffer = null;
+    let audioCtx = null;
+    let audioSource = null;
+
+    let isPlaying = false;
+    let startTime = 0;
+    let pauseTime = 0;
+    let duration = 0;
+    let playbackRate = 1.0;
+    let hiSpeed = 2.5;
+    let cameraTilt = 30; // 0 = 3D perspective, 90 = 2D vertical top-down
+    let userOffset = 0;
+
+    let hitEffects = [];
+
+    // DOM Elements
+    const canvas = document.getElementById('chartCanvas');
+    const ctx = canvas.getContext('2d');
+    const btnPlayPause = document.getElementById('btnPlayPause');
+    const iconPlayPause = document.getElementById('iconPlayPause');
+    const btnStop = document.getElementById('btnStop');
+    const seekSlider = document.getElementById('seekSlider');
+    const currentTimeDisplay = document.getElementById('currentTimeDisplay');
+    const totalTimeDisplay = document.getElementById('totalTimeDisplay');
+    const hiSpeedSlider = document.getElementById('hiSpeedSlider');
+    const hiSpeedVal = document.getElementById('hiSpeedVal');
+    const offsetSlider = document.getElementById('offsetSlider');
+    const offsetVal = document.getElementById('offsetVal');
+    const currentSpeedDisplay = document.getElementById('currentSpeedDisplay');
+    const sampleModeSelect = document.getElementById('sampleModeSelect');
+    const customSampleInput = document.getElementById('customSampleInput');
+
+    // Setup Lucide Icons
+    lucide.createIcons();
+
+    // Resize Canvas Handler
+    function resizeCanvas() {
+      const rect = canvas.parentElement.getBoundingClientRect();
+      canvas.width = rect.width;
+      canvas.height = rect.height;
+    }
+    window.addEventListener('resize', resizeCanvas);
+
+    // Initialization
+    window.onload = () => {
+      resizeCanvas();
+      loadChart(DEFAULT_CHART_DATA);
+      requestAnimationFrame(renderLoop);
+    };
+
+    // --- Chart Parsing & Soflan Math ---
+    function loadChart(data) {
+      chartData = data;
+
+      // Update UI Info
+      document.getElementById('songTitle').textContent = data.name || 'Untitled';
+      document.getElementById('infoBpm').textContent = data.BPM || 120;
+      document.getElementById('infoLanes').textContent = data.maxBlock || 4;
+      document.getElementById('infoNotes').textContent = data.notes ? data.notes.length : 0;
+      document.getElementById('infoOffset').textContent = (data.offset || 0) + 's';
+
+      const bpm = data.BPM || 120;
+      const baseOffset = data.offset || 0;
+
+      // 1. Parse Speed Changes (Soflan)
+      const rawSpeedChanges = (data.speedChanges || []).map(sc => {
+        let timeInSec = 0;
+        if (sc.sample !== undefined) {
+          timeInSec = sc.sample / sampleRateUnit;
+        } else if (sc.time !== undefined) {
+          timeInSec = sc.time;
+        }
+        return {
+          time: timeInSec,
+          speed: sc.speed
+        };
+      }).sort((a, b) => a.time - b.time);
+
+      // Pre-calculate piecewise integrated distance for Soflan calculation
+      parsedSpeedChanges = [];
+      let accumDist = 0;
+      let lastTime = 0;
+      let currentSpeed = 1.0;
+
+      if (rawSpeedChanges.length === 0 || rawSpeedChanges[0].time > 0) {
+        parsedSpeedChanges.push({ time: 0, speed: 1.0, accumDist: 0 });
+      }
+
+      rawSpeedChanges.forEach(sc => {
+        if (sc.time > lastTime) {
+          accumDist += (sc.time - lastTime) * currentSpeed;
+          lastTime = sc.time;
+        }
+        currentSpeed = sc.speed;
+        parsedSpeedChanges.push({
+          time: sc.time,
+          speed: sc.speed,
+          accumDist: accumDist
+        });
+      });
+
+      // Calculate Visual Position Y integral value at any timestamp t
+      window.calculateVisualPosition = function(t) {
+        if (!parsedSpeedChanges || parsedSpeedChanges.length === 0) return t;
+
+        if (t <= parsedSpeedChanges[0].time) {
+          return t * parsedSpeedChanges[0].speed;
+        }
+
+        let activeIdx = 0;
+        for (let i = 0; i < parsedSpeedChanges.length; i++) {
+          if (t >= parsedSpeedChanges[i].time) {
+            activeIdx = i;
+          } else {
+            break;
+          }
+        }
+
+        const seg = parsedSpeedChanges[activeIdx];
+        return seg.accumDist + (t - seg.time) * seg.speed;
+      };
+
+      // 2. Parse Notes
+      parsedNotes = (data.notes || []).map(n => {
+        const beat = n.num / n.LPB;
+        const time = baseOffset + (beat * 60 / bpm);
+
+        let endTime = time;
+        if ((n.type === 2 || n.type === 4) && n.notes && n.notes.length > 0) {
+          const endN = n.notes[0];
+          const endBeat = endN.num / endN.LPB;
+          endTime = baseOffset + (endBeat * 60 / bpm);
+        }
+
+        return {
+          type: n.type,
+          block: n.block,
+          time: time,
+          endTime: endTime,
+          hit: false,
+          endHit: false
+        };
+      }).sort((a, b) => a.time - b.time);
+
+      // Total Duration Calculation
+      let maxTime = 0;
+      parsedNotes.forEach(n => {
+        if (n.endTime > maxTime) maxTime = n.endTime;
+      });
+      parsedSpeedChanges.forEach(sc => {
+        if (sc.time > maxTime) maxTime = sc.time;
+      });
+      duration = Math.max(maxTime + 2.0, 10.0);
+
+      totalTimeDisplay.textContent = formatTime(duration);
+      pauseTime = 0;
+      updateSeekUI();
+    }
+
+    // Handle Sample Rate Unit Selection & Custom Input Change
+    function applySampleRateChange(newRate) {
+      if (!newRate || isNaN(newRate) || newRate <= 0) return;
+      sampleRateUnit = parseFloat(newRate);
+      if (chartData) {
+        const curr = pauseTime;
+        loadChart(chartData);
+        pauseTime = curr;
+      }
+    }
+
+    sampleModeSelect.addEventListener('change', (e) => {
+      const val = e.target.value;
+      if (val === 'custom') {
+        customSampleInput.focus();
+        applySampleRateChange(customSampleInput.value);
+      } else {
+        customSampleInput.value = val;
+        applySampleRateChange(val);
+      }
+    });
+
+    customSampleInput.addEventListener('input', (e) => {
+      const val = parseFloat(e.target.value);
+      if (val > 0) {
+        // Sync dropdown option if it matches standard values
+        const matchingOpt = Array.from(sampleModeSelect.options).find(opt => parseFloat(opt.value) === val);
+        if (matchingOpt) {
+          sampleModeSelect.value = matchingOpt.value;
+        } else {
+          sampleModeSelect.value = 'custom';
+        }
+        applySampleRateChange(val);
+      }
+    });
+
+    // --- Audio Handling ---
+    function initAudioContext() {
+      if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      }
+    }
+
+    document.getElementById('audioFileInput').addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      document.getElementById('audioFileName').textContent = file.name;
+
+      initAudioContext();
+      const reader = new FileReader();
+      reader.onload = (evt) => {
+        audioCtx.decodeAudioData(evt.target.result, (buffer) => {
+          audioBuffer = buffer;
+          duration = buffer.duration;
+          totalTimeDisplay.textContent = formatTime(duration);
+        });
+      };
+      reader.readAsArrayBuffer(file);
+    });
+
+    document.getElementById('jsonFileInput').addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      document.getElementById('chartFileName').textContent = file.name;
+
+      const reader = new FileReader();
+      reader.onload = (evt) => {
+        try {
+          const parsed = JSON.parse(evt.target.result);
+          stopPlayback();
+          loadChart(parsed);
+        } catch (err) {
+          alert('Invalid JSON file format.');
+        }
+      };
+      reader.readAsText(file);
+    });
+
+    // --- Playback Logic ---
+    function togglePlay() {
+      if (isPlaying) {
+        pausePlayback();
+      } else {
+        startPlayback();
+      }
+    }
+
+    function startPlayback() {
+      initAudioContext();
+      if (audioCtx.state === 'suspended') {
+        audioCtx.resume();
+      }
+
+      isPlaying = true;
+      startTime = performance.now() - (pauseTime * 1000 / playbackRate);
+
+      if (audioBuffer) {
+        if (audioSource) audioSource.stop();
+        audioSource = audioCtx.createBufferSource();
+        audioSource.buffer = audioBuffer;
+        audioSource.playbackRate.value = playbackRate;
+        audioSource.connect(audioCtx.destination);
+        audioSource.start(0, Math.max(0, pauseTime + userOffset));
+      }
+
+      iconPlayPause.setAttribute('data-lucide', 'pause');
+      lucide.createIcons();
+    }
+
+    function pausePlayback() {
+      isPlaying = false;
+      if (audioSource) {
+        try { audioSource.stop(); } catch (e) {}
+        audioSource = null;
+      }
+      iconPlayPause.setAttribute('data-lucide', 'play');
+      lucide.createIcons();
+    }
+
+    function stopPlayback() {
+      pausePlayback();
+      pauseTime = 0;
+      resetNotesHitState();
+      updateSeekUI();
+    }
+
+    function getCurrentTime() {
+      if (isPlaying) {
+        const now = performance.now();
+        pauseTime = ((now - startTime) / 1000) * playbackRate;
+        if (pauseTime >= duration) {
+          stopPlayback();
+        }
+      }
+      return pauseTime;
+    }
+
+    function seekTo(time) {
+      const wasPlaying = isPlaying;
+      if (isPlaying) pausePlayback();
+      pauseTime = Math.max(0, Math.min(time, duration));
+      resetNotesHitState();
+      updateSeekUI();
+      if (wasPlaying) startPlayback();
+    }
+
+    function resetNotesHitState() {
+      parsedNotes.forEach(n => {
+        n.hit = false;
+        n.endHit = false;
+      });
+      hitEffects = [];
+    }
+
+    // --- UI Controls Listeners ---
+    btnPlayPause.addEventListener('click', togglePlay);
+    btnStop.addEventListener('click', stopPlayback);
+
+    seekSlider.addEventListener('input', (e) => {
+      const targetTime = (parseFloat(e.target.value) / 100) * duration;
+      seekTo(targetTime);
+    });
+
+    hiSpeedSlider.addEventListener('input', (e) => {
+      hiSpeed = parseFloat(e.target.value);
+      hiSpeedVal.textContent = hiSpeed.toFixed(1) + 'x';
+    });
+
+    const tiltSlider = document.getElementById('tiltSlider');
+    const tiltVal = document.getElementById('tiltVal');
+    tiltSlider.addEventListener('input', (e) => {
+      cameraTilt = parseFloat(e.target.value);
+      tiltVal.textContent = cameraTilt + '°';
+    });
+
+    offsetSlider.addEventListener('input', (e) => {
+      userOffset = parseFloat(e.target.value) / 1000;
+      offsetVal.textContent = e.target.value + ' ms';
+    });
+
+    document.querySelectorAll('.btnRate').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        document.querySelectorAll('.btnRate').forEach(b => {
+          b.classList.remove('bg-cyan-500/20', 'text-cyan-400', 'border-cyan-500/50');
+        });
+        btn.classList.add('bg-cyan-500/20', 'text-cyan-400', 'border-cyan-500/50');
+        
+        playbackRate = parseFloat(btn.dataset.rate);
+        document.getElementById('rateVal').textContent = playbackRate.toFixed(1) + 'x';
+        
+        if (isPlaying) {
+          const curr = pauseTime;
+          pausePlayback();
+          pauseTime = curr;
+          startPlayback();
+        }
+      });
+    });
+
+    function updateSeekUI() {
+      currentTimeDisplay.textContent = formatTime(pauseTime);
+      seekSlider.value = (pauseTime / duration) * 100 || 0;
+    }
+
+    function formatTime(seconds) {
+      const m = Math.floor(seconds / 60);
+      const s = Math.floor(seconds % 60);
+      const ms = Math.floor((seconds % 1) * 100);
+      return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}.${String(ms).padStart(2, '0')}`;
+    }
+
+    // --- getCurrentSoflanSpeed ---
+    function getCurrentSpeed(t) {
+      if (!parsedSpeedChanges || parsedSpeedChanges.length === 0) return 1.0;
+      let spd = 1.0;
+      for (let sc of parsedSpeedChanges) {
+        if (t >= sc.time) {
+          spd = sc.speed;
+        } else {
+          break;
+        }
+      }
+      return spd;
+    }
+
+    // --- Particle Hit Effect System ---
+    function triggerHitEffect(x, y, color) {
+      for (let i = 0; i < 12; i++) {
+        const angle = Math.random() * Math.PI * 2;
+        const speed = Math.random() * 4 + 2;
+        hitEffects.push({
+          x: x,
+          y: y,
+          vx: Math.cos(angle) * speed,
+          vy: Math.sin(angle) * speed,
+          size: Math.random() * 4 + 2,
+          color: color,
+          alpha: 1.0
+        });
+      }
+    }
+
+    // --- Canvas Rendering Loop ---
+    function renderLoop() {
+      const curTime = getCurrentTime();
+      if (isPlaying) updateSeekUI();
+
+      // Update Current Soflan Display
+      const curSoflan = getCurrentSpeed(curTime);
+      currentSpeedDisplay.textContent = curSoflan.toFixed(1) + 'x';
+
+      // Clear Canvas
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      const maxBlock = chartData ? (chartData.maxBlock || 4) : 4;
+      const paddingX = 30;
+      const laneAreaWidth = canvas.width - (paddingX * 2);
+      const laneWidth = laneAreaWidth / maxBlock;
+
+      const judgeY = canvas.height - 90; // Judgment Line Position
+      const pixelsPerSec = 380 * hiSpeed; 
+
+      const curVisPos = calculateVisualPosition(curTime);
+      const tiltRad = (cameraTilt * Math.PI) / 180;
+      const cosTilt = Math.cos(tiltRad); // 1.0 at 0 deg, 0.0 at 90 deg
+      const sinTilt = Math.sin(tiltRad); // 0.0 at 0 deg, 1.0 at 90 deg
+
+      // 3D/2D projection helper for note positions
+      // timeDelta = noteVisPos - curVisPos
+      function projectNote(timeDelta, blockX, isFullWidth) {
+        // Distance in seconds from judge line
+        const distY = timeDelta * pixelsPerSec;
+
+        if (cameraTilt >= 90) {
+          // Pure 2D Vertical Mode
+          const y = judgeY - distY;
+          const x = isFullWidth ? paddingX : paddingX + blockX * laneWidth;
+          const w = isFullWidth ? laneAreaWidth : laneWidth;
+          return { x: x, y: y, scale: 1.0, alpha: 1.0, visible: true };
+        } else {
+          // 3D Perspective & Tilt Projection
+          // Perspective depth factor (z goes into screen as distY increases)
+          const depthPerspective = 400;
+          const z = distY * cosTilt + depthPerspective;
+          if (z <= 10) return { visible: false };
+
+          const perspectiveScale = depthPerspective / z;
+          
+          // Center of lane area
+          const centerX = canvas.width / 2;
+          
+          // X position with perspective convergence towards vanishing point (centerX, judgeY - 200 * sinTilt)
+          const vanishingY = judgeY - 220 * Math.max(0.2, sinTilt);
+          const rawX = isFullWidth ? paddingX + laneAreaWidth / 2 : paddingX + blockX * laneWidth + laneWidth / 2;
+          
+          const x = centerX + (rawX - centerX) * perspectiveScale;
+          
+          // Y position with tilt angle
+          const y = judgeY - (distY * sinTilt) - ((judgeY - distY * cosTilt - vanishingY) * (1 - perspectiveScale));
+
+          // Fade out near the top / vanishing point
+          const alpha = Math.min(1.0, Math.max(0.0, (y - 20) / 80));
+
+          return {
+            x: isFullWidth ? x - (laneAreaWidth * perspectiveScale) / 2 : x - (laneWidth * perspectiveScale) / 2,
+            y: y,
+            width: isFullWidth ? laneAreaWidth * perspectiveScale : laneWidth * perspectiveScale,
+            scale: perspectiveScale,
+            alpha: alpha,
+            visible: true
+          };
+        }
+      }
+
+      // --- Draw Lanes & Background Grid ---
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.9)';
+      ctx.fillRect(paddingX, 0, laneAreaWidth, canvas.height);
+
+      // Lane Dividers & Grid lines
+      ctx.strokeStyle = 'rgba(51, 65, 85, 0.4)';
+      ctx.lineWidth = 1.5;
+      for (let i = 0; i <= maxBlock; i++) {
+        const lx = paddingX + (i * laneWidth);
+        if (cameraTilt >= 90) {
+          ctx.beginPath();
+          ctx.moveTo(lx, 0);
+          ctx.lineTo(lx, canvas.height);
+          ctx.stroke();
+        } else {
+          // Perspective converging lines
+          const vanishingX = canvas.width / 2;
+          const vanishingY = judgeY - 220 * Math.sin(tiltRad);
+          ctx.beginPath();
+          ctx.moveTo(vanishingX + (lx - (canvas.width / 2)) * 0.2, vanishingY);
+          ctx.lineTo(lx, canvas.height);
+          ctx.stroke();
+        }
+      }
+
+      // --- Draw Judgment Line ---
+      ctx.shadowBlur = 15;
+      ctx.shadowColor = '#22d3ee';
+      ctx.strokeStyle = '#06b6d4';
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.moveTo(paddingX, judgeY);
+      ctx.lineTo(paddingX + laneAreaWidth, judgeY);
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+
+      // --- Draw Notes ---
+      parsedNotes.forEach(note => {
+        const noteVisPos = calculateVisualPosition(note.time);
+        const timeDelta = noteVisPos - curVisPos;
+
+        // Long Note Tail Render
+        if (note.type === 2 || note.type === 4) {
+          const endVisPos = calculateVisualPosition(note.endTime);
+          const endTimeDelta = endVisPos - curVisPos;
+          
+          const isSpace = (note.type === 4);
+          const startProj = projectNote(timeDelta, note.block, isSpace);
+          const endProj = projectNote(endTimeDelta, note.block, isSpace);
+
+          if (startProj.visible && endProj.visible) {
+            const bodyY = Math.min(startProj.y, endProj.y);
+            const bodyH = Math.abs(startProj.y - endProj.y);
+            const noteW = Math.max(10, startProj.width || laneWidth - 6);
+            const noteX = startProj.x + 3;
+
+            if (bodyY + bodyH >= 0 && bodyY <= canvas.height) {
+              const grad = ctx.createLinearGradient(0, bodyY, 0, bodyY + bodyH);
+              if (isSpace) {
+                grad.addColorStop(0, 'rgba(236, 72, 153, 0.6)');
+                grad.addColorStop(1, 'rgba(219, 39, 119, 0.1)');
+              } else {
+                grad.addColorStop(0, 'rgba(59, 130, 246, 0.6)');
+                grad.addColorStop(1, 'rgba(37, 99, 235, 0.1)');
+              }
+
+              ctx.fillStyle = grad;
+              ctx.fillRect(noteX, bodyY, Math.max(5, noteW - 6), bodyH);
+
+              ctx.strokeStyle = isSpace ? '#f472b6' : '#60a5fa';
+              ctx.lineWidth = 1.5;
+              ctx.strokeRect(noteX, bodyY, Math.max(5, noteW - 6), bodyH);
+            }
+          }
+        }
+
+        // Trigger Hit Particles when note crosses Judgment line
+        if (isPlaying && !note.hit && curTime >= note.time) {
+          note.hit = true;
+          const hitX = (note.type === 3 || note.type === 4)
+            ? paddingX + (laneAreaWidth / 2)
+            : paddingX + (note.block * laneWidth) + (laneWidth / 2);
+          const hitColor = (note.type === 3) ? '#facc15' : (note.type === 4) ? '#ec4899' : '#22d3ee';
+          triggerHitEffect(hitX, judgeY, hitColor);
+        }
+
+        // Draw Main Note Head
+        const proj = projectNote(timeDelta, note.block, note.type === 3 || note.type === 4);
+        if (proj.visible && proj.y >= -30 && proj.y <= canvas.height + 30) {
+          const noteHeight = Math.max(6, 16 * (proj.scale || 1.0));
+          const nx = proj.x + 2;
+          const nw = Math.max(12, (proj.width || laneWidth) - 4);
+          const ny = proj.y;
+
+          ctx.globalAlpha = proj.alpha !== undefined ? proj.alpha : 1.0;
+
+          if (note.type === 1 || note.type === 2) {
+            ctx.shadowBlur = 10;
+            ctx.shadowColor = note.type === 1 ? '#22d3ee' : '#3b82f6';
+            ctx.fillStyle = note.type === 1 ? '#06b6d4' : '#2563eb';
+            
+            ctx.beginPath();
+            ctx.roundRect(nx, ny - (noteHeight / 2), nw, noteHeight, 4);
+            ctx.fill();
+
+            ctx.fillStyle = '#ffffff';
+            ctx.beginPath();
+            ctx.roundRect(nx + 2, ny - (noteHeight / 4), nw - 4, noteHeight / 2, 2);
+            ctx.fill();
+            ctx.shadowBlur = 0;
+
+          } else if (note.type === 3 || note.type === 4) {
+            ctx.shadowBlur = 12;
+            ctx.shadowColor = note.type === 3 ? '#eab308' : '#ec4899';
+            ctx.fillStyle = note.type === 3 ? '#eab308' : '#ec4899';
+
+            ctx.beginPath();
+            ctx.roundRect(nx, ny - (noteHeight / 2), nw, noteHeight, 6);
+            ctx.fill();
+
+            ctx.fillStyle = '#ffffff';
+            ctx.beginPath();
+            ctx.roundRect(nx + 6, ny - (noteHeight / 4), nw - 12, noteHeight / 2, 2);
+            ctx.fill();
+            ctx.shadowBlur = 0;
+          }
+          ctx.globalAlpha = 1.0;
+        }
+      });
+
+      // --- Draw Top Fade-Out / Shade Gradient Mask (Smooth Fade-in from Top) ---
+      const shadeGrad = ctx.createLinearGradient(0, 0, 0, 120);
+      shadeGrad.addColorStop(0, 'rgba(9, 10, 16, 0.95)');
+      shadeGrad.addColorStop(0.6, 'rgba(9, 10, 16, 0.5)');
+      shadeGrad.addColorStop(1, 'rgba(9, 10, 16, 0.0)');
+      ctx.fillStyle = shadeGrad;
+      ctx.fillRect(paddingX, 0, laneAreaWidth, 120);
+
+      // --- Draw Particle Effects ---
+      hitEffects.forEach((p, idx) => {
+        p.x += p.vx;
+        p.y += p.vy;
+        p.alpha -= 0.03;
+
+        if (p.alpha <= 0) {
+          hitEffects.splice(idx, 1);
+        } else {
+          ctx.globalAlpha = p.alpha;
+          ctx.fillStyle = p.color;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.globalAlpha = 1.0;
+        }
+      });
+
+      requestAnimationFrame(renderLoop);
+    }
+  </script>
+</body>
+</html>
