@@ -179,15 +179,6 @@
           <input type="range" id="hiSpeedSlider" min="0.5" max="5.0" value="2.5" step="0.1" class="w-full accent-cyan-400 bg-slate-800 h-1.5 rounded-lg cursor-pointer">
         </div>
 
-        <!-- カメラチルト角 (Camera Tilt Angle: 0° = 3D Perspective, 90° = 2D Vertical) -->
-        <div class="space-y-1">
-          <div class="flex justify-between text-xs">
-            <span class="text-slate-300">Camera Tilt (3D ⇄ 2D)</span>
-            <span id="tiltVal" class="text-cyan-400 font-orbitron font-semibold">30°</span>
-          </div>
-          <input type="range" id="tiltSlider" min="0" max="90" value="30" step="1" class="w-full accent-cyan-400 bg-slate-800 h-1.5 rounded-lg cursor-pointer">
-        </div>
-
         <!-- 再生速度 (Playback Speed Rate) -->
         <div class="space-y-1">
           <div class="flex justify-between text-xs">
@@ -326,7 +317,6 @@
     let duration = 0;
     let playbackRate = 1.0;
     let hiSpeed = 2.5;
-    let cameraTilt = 30; // 0 = 3D perspective, 90 = 2D vertical top-down
     let userOffset = 0;
 
     let hitEffects = [];
@@ -643,13 +633,6 @@
       hiSpeedVal.textContent = hiSpeed.toFixed(1) + 'x';
     });
 
-    const tiltSlider = document.getElementById('tiltSlider');
-    const tiltVal = document.getElementById('tiltVal');
-    tiltSlider.addEventListener('input', (e) => {
-      cameraTilt = parseFloat(e.target.value);
-      tiltVal.textContent = cameraTilt + '°';
-    });
-
     offsetSlider.addEventListener('input', (e) => {
       userOffset = parseFloat(e.target.value) / 1000;
       offsetVal.textContent = e.target.value + ' ms';
@@ -730,88 +713,28 @@
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
       const maxBlock = chartData ? (chartData.maxBlock || 4) : 4;
-      const paddingX = 30;
+      const paddingX = 20;
       const laneAreaWidth = canvas.width - (paddingX * 2);
       const laneWidth = laneAreaWidth / maxBlock;
 
-      const judgeY = canvas.height - 90; // Judgment Line Position
-      const pixelsPerSec = 380 * hiSpeed; 
+      const judgeY = canvas.height - 80; // Judgment Line Position
+      const pixelsPerSec = 400 * hiSpeed; // Visual scale
 
       const curVisPos = calculateVisualPosition(curTime);
-      const tiltRad = (cameraTilt * Math.PI) / 180;
-      const cosTilt = Math.cos(tiltRad); // 1.0 at 0 deg, 0.0 at 90 deg
-      const sinTilt = Math.sin(tiltRad); // 0.0 at 0 deg, 1.0 at 90 deg
-
-      // 3D/2D projection helper for note positions
-      // timeDelta = noteVisPos - curVisPos
-      function projectNote(timeDelta, blockX, isFullWidth) {
-        // Distance in seconds from judge line
-        const distY = timeDelta * pixelsPerSec;
-
-        if (cameraTilt >= 90) {
-          // Pure 2D Vertical Mode
-          const y = judgeY - distY;
-          const x = isFullWidth ? paddingX : paddingX + blockX * laneWidth;
-          const w = isFullWidth ? laneAreaWidth : laneWidth;
-          return { x: x, y: y, scale: 1.0, alpha: 1.0, visible: true };
-        } else {
-          // 3D Perspective & Tilt Projection
-          // Perspective depth factor (z goes into screen as distY increases)
-          const depthPerspective = 400;
-          const z = distY * cosTilt + depthPerspective;
-          if (z <= 10) return { visible: false };
-
-          const perspectiveScale = depthPerspective / z;
-          
-          // Center of lane area
-          const centerX = canvas.width / 2;
-          
-          // X position with perspective convergence towards vanishing point (centerX, judgeY - 200 * sinTilt)
-          const vanishingY = judgeY - 220 * Math.max(0.2, sinTilt);
-          const rawX = isFullWidth ? paddingX + laneAreaWidth / 2 : paddingX + blockX * laneWidth + laneWidth / 2;
-          
-          const x = centerX + (rawX - centerX) * perspectiveScale;
-          
-          // Y position with tilt angle
-          const y = judgeY - (distY * sinTilt) - ((judgeY - distY * cosTilt - vanishingY) * (1 - perspectiveScale));
-
-          // Fade out near the top / vanishing point
-          const alpha = Math.min(1.0, Math.max(0.0, (y - 20) / 80));
-
-          return {
-            x: isFullWidth ? x - (laneAreaWidth * perspectiveScale) / 2 : x - (laneWidth * perspectiveScale) / 2,
-            y: y,
-            width: isFullWidth ? laneAreaWidth * perspectiveScale : laneWidth * perspectiveScale,
-            scale: perspectiveScale,
-            alpha: alpha,
-            visible: true
-          };
-        }
-      }
 
       // --- Draw Lanes & Background Grid ---
-      ctx.fillStyle = 'rgba(15, 23, 42, 0.9)';
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.8)';
       ctx.fillRect(paddingX, 0, laneAreaWidth, canvas.height);
 
-      // Lane Dividers & Grid lines
-      ctx.strokeStyle = 'rgba(51, 65, 85, 0.4)';
-      ctx.lineWidth = 1.5;
+      // Lane Dividers
+      ctx.strokeStyle = 'rgba(51, 65, 85, 0.5)';
+      ctx.lineWidth = 2;
       for (let i = 0; i <= maxBlock; i++) {
         const lx = paddingX + (i * laneWidth);
-        if (cameraTilt >= 90) {
-          ctx.beginPath();
-          ctx.moveTo(lx, 0);
-          ctx.lineTo(lx, canvas.height);
-          ctx.stroke();
-        } else {
-          // Perspective converging lines
-          const vanishingX = canvas.width / 2;
-          const vanishingY = judgeY - 220 * Math.sin(tiltRad);
-          ctx.beginPath();
-          ctx.moveTo(vanishingX + (lx - (canvas.width / 2)) * 0.2, vanishingY);
-          ctx.lineTo(lx, canvas.height);
-          ctx.stroke();
-        }
+        ctx.beginPath();
+        ctx.moveTo(lx, 0);
+        ctx.lineTo(lx, canvas.height);
+        ctx.stroke();
       }
 
       // --- Draw Judgment Line ---
@@ -823,45 +746,44 @@
       ctx.moveTo(paddingX, judgeY);
       ctx.lineTo(paddingX + laneAreaWidth, judgeY);
       ctx.stroke();
-      ctx.shadowBlur = 0;
+      ctx.shadowBlur = 0; // Reset Shadow
 
       // --- Draw Notes ---
       parsedNotes.forEach(note => {
         const noteVisPos = calculateVisualPosition(note.time);
-        const timeDelta = noteVisPos - curVisPos;
+        const dy = judgeY - ((noteVisPos - curVisPos) * pixelsPerSec);
 
         // Long Note Tail Render
         if (note.type === 2 || note.type === 4) {
           const endVisPos = calculateVisualPosition(note.endTime);
-          const endTimeDelta = endVisPos - curVisPos;
-          
+          const endDy = judgeY - ((endVisPos - curVisPos) * pixelsPerSec);
+
           const isSpace = (note.type === 4);
-          const startProj = projectNote(timeDelta, note.block, isSpace);
-          const endProj = projectNote(endTimeDelta, note.block, isSpace);
+          const x = isSpace ? paddingX : paddingX + (note.block * laneWidth);
+          const w = isSpace ? laneAreaWidth : laneWidth;
 
-          if (startProj.visible && endProj.visible) {
-            const bodyY = Math.min(startProj.y, endProj.y);
-            const bodyH = Math.abs(startProj.y - endProj.y);
-            const noteW = Math.max(10, startProj.width || laneWidth - 6);
-            const noteX = startProj.x + 3;
+          // Only render if visible on screen
+          if (Math.max(dy, endDy) >= 0 && Math.min(dy, endDy) <= canvas.height) {
+            const bodyY = Math.min(dy, endDy);
+            const bodyH = Math.abs(dy - endDy);
 
-            if (bodyY + bodyH >= 0 && bodyY <= canvas.height) {
-              const grad = ctx.createLinearGradient(0, bodyY, 0, bodyY + bodyH);
-              if (isSpace) {
-                grad.addColorStop(0, 'rgba(236, 72, 153, 0.6)');
-                grad.addColorStop(1, 'rgba(219, 39, 119, 0.1)');
-              } else {
-                grad.addColorStop(0, 'rgba(59, 130, 246, 0.6)');
-                grad.addColorStop(1, 'rgba(37, 99, 235, 0.1)');
-              }
-
-              ctx.fillStyle = grad;
-              ctx.fillRect(noteX, bodyY, Math.max(5, noteW - 6), bodyH);
-
-              ctx.strokeStyle = isSpace ? '#f472b6' : '#60a5fa';
-              ctx.lineWidth = 1.5;
-              ctx.strokeRect(noteX, bodyY, Math.max(5, noteW - 6), bodyH);
+            // Fill Long Body
+            const grad = ctx.createLinearGradient(0, bodyY, 0, bodyY + bodyH);
+            if (isSpace) {
+              grad.addColorStop(0, 'rgba(236, 72, 153, 0.5)');
+              grad.addColorStop(1, 'rgba(219, 39, 119, 0.2)');
+            } else {
+              grad.addColorStop(0, 'rgba(59, 130, 246, 0.5)');
+              grad.addColorStop(1, 'rgba(37, 99, 235, 0.2)');
             }
+
+            ctx.fillStyle = grad;
+            ctx.fillRect(x + 4, bodyY, w - 8, bodyH);
+
+            // Border lines for hold body
+            ctx.strokeStyle = isSpace ? '#f472b6' : '#60a5fa';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(x + 4, bodyY, w - 8, bodyH);
           }
         }
 
@@ -876,56 +798,51 @@
         }
 
         // Draw Main Note Head
-        const proj = projectNote(timeDelta, note.block, note.type === 3 || note.type === 4);
-        if (proj.visible && proj.y >= -30 && proj.y <= canvas.height + 30) {
-          const noteHeight = Math.max(6, 16 * (proj.scale || 1.0));
-          const nx = proj.x + 2;
-          const nw = Math.max(12, (proj.width || laneWidth) - 4);
-          const ny = proj.y;
-
-          ctx.globalAlpha = proj.alpha !== undefined ? proj.alpha : 1.0;
+        if (dy >= -20 && dy <= canvas.height + 20) {
+          const noteHeight = 16;
 
           if (note.type === 1 || note.type === 2) {
+            // Normal & Long Start (Cyan / Blue)
+            const nx = paddingX + (note.block * laneWidth) + 3;
+            const nw = laneWidth - 6;
+
             ctx.shadowBlur = 10;
             ctx.shadowColor = note.type === 1 ? '#22d3ee' : '#3b82f6';
             ctx.fillStyle = note.type === 1 ? '#06b6d4' : '#2563eb';
             
             ctx.beginPath();
-            ctx.roundRect(nx, ny - (noteHeight / 2), nw, noteHeight, 4);
+            ctx.roundRect(nx, dy - (noteHeight / 2), nw, noteHeight, 6);
             ctx.fill();
 
+            // Inner Highlight
             ctx.fillStyle = '#ffffff';
             ctx.beginPath();
-            ctx.roundRect(nx + 2, ny - (noteHeight / 4), nw - 4, noteHeight / 2, 2);
+            ctx.roundRect(nx + 4, dy - (noteHeight / 4), nw - 8, noteHeight / 2, 3);
             ctx.fill();
             ctx.shadowBlur = 0;
 
           } else if (note.type === 3 || note.type === 4) {
+            // Space & Space Long (Yellow / Magenta Full Width)
+            const nx = paddingX + 4;
+            const nw = laneAreaWidth - 8;
+
             ctx.shadowBlur = 12;
             ctx.shadowColor = note.type === 3 ? '#eab308' : '#ec4899';
             ctx.fillStyle = note.type === 3 ? '#eab308' : '#ec4899';
 
             ctx.beginPath();
-            ctx.roundRect(nx, ny - (noteHeight / 2), nw, noteHeight, 6);
+            ctx.roundRect(nx, dy - (noteHeight / 2), nw, noteHeight, 8);
             ctx.fill();
 
+            // Inner Accent Line
             ctx.fillStyle = '#ffffff';
             ctx.beginPath();
-            ctx.roundRect(nx + 6, ny - (noteHeight / 4), nw - 12, noteHeight / 2, 2);
+            ctx.roundRect(nx + 10, dy - (noteHeight / 4), nw - 20, noteHeight / 2, 3);
             ctx.fill();
             ctx.shadowBlur = 0;
           }
-          ctx.globalAlpha = 1.0;
         }
       });
-
-      // --- Draw Top Fade-Out / Shade Gradient Mask (Smooth Fade-in from Top) ---
-      const shadeGrad = ctx.createLinearGradient(0, 0, 0, 120);
-      shadeGrad.addColorStop(0, 'rgba(9, 10, 16, 0.95)');
-      shadeGrad.addColorStop(0.6, 'rgba(9, 10, 16, 0.5)');
-      shadeGrad.addColorStop(1, 'rgba(9, 10, 16, 0.0)');
-      ctx.fillStyle = shadeGrad;
-      ctx.fillRect(paddingX, 0, laneAreaWidth, 120);
 
       // --- Draw Particle Effects ---
       hitEffects.forEach((p, idx) => {
