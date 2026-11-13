@@ -51,7 +51,7 @@
     
     <!-- ヘッダー情報オーバーレイ -->
     <div class="absolute top-4 left-4 right-4 z-10 flex justify-between items-start pointer-events-none">
-      <div class="bg-slate-900/80 backdrop-blur border border-slate-800 p-3 rounded-xl pointer-events-auto max-w-xs md:max-w-md shadow-xl">
+      <div class="bg-slate-900/85 backdrop-blur border border-slate-800 p-3 rounded-xl pointer-events-auto max-w-xs md:max-w-md shadow-xl">
         <h1 id="songTitle" class="text-lg md:text-xl font-bold font-orbitron text-cyan-400 truncate">Song Title</h1>
         <div class="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-400 mt-1">
           <div>BPM: <span id="infoBpm" class="text-slate-200 font-semibold">170</span></div>
@@ -62,7 +62,7 @@
       </div>
 
       <!-- 現在の速度（ソフラン表示） -->
-      <div class="bg-slate-900/80 backdrop-blur border border-slate-800 px-4 py-2 rounded-xl pointer-events-auto text-right shadow-xl">
+      <div class="bg-slate-900/85 backdrop-blur border border-slate-800 px-4 py-2 rounded-xl pointer-events-auto text-right shadow-xl">
         <div class="text-xs text-slate-400 uppercase tracking-wider font-semibold">Current Speed</div>
         <div id="currentSpeedDisplay" class="text-xl md:text-2xl font-bold font-orbitron text-yellow-400">1.0x</div>
       </div>
@@ -331,7 +331,6 @@
         });
       });
 
-      // バイナリサーチによる高速なビジュアルポジション計算
       window.calculateVisualPosition = function(t) {
         if (!parsedSpeedChanges || parsedSpeedChanges.length === 0) return t;
 
@@ -606,7 +605,7 @@
     }
 
     function triggerHitEffect(x, y, color) {
-      for (let i = 0; i < 8; i++) { // パーティクル数を少し軽量化
+      for (let i = 0; i < 8; i++) {
         const angle = Math.random() * Math.PI * 2;
         const speed = Math.random() * 3 + 1.5;
         hitEffects.push({
@@ -661,53 +660,26 @@
       ctx.lineTo(paddingX + laneAreaWidth, judgeY);
       ctx.stroke();
 
-      // ノーツの描画（画面内に入るものだけを対象にするとさらに高速化可能ですが、全件でもインデックス高速化済み）
+      // ノーツの描画
       parsedNotes.forEach(note => {
         const noteVisPos = calculateVisualPosition(note.time);
         const dy = judgeY - ((noteVisPos - curVisPos) * pixelsPerSec);
         
-        // Long Note Tail & End Cap Render (胴体の縁取りあり ＆ 終点は始点と同じ見た目)
-        if (note.type === 2 || note.type === 4) {
+        // 判定ライン（judgeY）より下にいったノーツは描画・処理をスキップ（消去）
+        // ロングノーツの場合は、終点がまだ判定ラインより上に残っている可能性があるので、終点の位置も考慮
+        const isLong = (note.type === 2 || note.type === 4);
+        let endDy = dy;
+        if (isLong) {
           const endVisPos = calculateVisualPosition(note.endTime);
-          const endDy = judgeY - ((endVisPos - curVisPos) * pixelsPerSec);
-
-          const isSpace = (note.type === 4);
-          const x = isSpace ? paddingX : paddingX + (note.block * laneWidth);
-          const w = isSpace ? laneAreaWidth : laneWidth;
-
-          // 画面内に入る場合のみロングノーツ全体を描画
-          if (Math.max(dy, endDy) >= -50 && Math.min(dy, endDy) <= canvas.height + 50) {
-            const bodyY = Math.min(dy, endDy);
-            const bodyH = Math.abs(dy - endDy);
-
-            // 1. ロングノーツの胴体 ＆ 縁取り
-            ctx.fillStyle = isSpace ? 'rgba(236, 72, 153, 0.3)' : 'rgba(59, 130, 246, 0.3)';
-            ctx.fillRect(x + 4, bodyY, w - 8, bodyH);
-
-            ctx.strokeStyle = isSpace ? '#ec4899' : '#3b82f6';
-            ctx.lineWidth = 2;
-            ctx.strokeRect(x + 4, bodyY, w - 8, bodyH);
-
-            // 2. 終点（始点と同じデザインのノーツパーツ）
-            const noteHeight = 16;
-            if (isSpace) {
-              const nx = paddingX + 4;
-              const nw = laneAreaWidth - 8;
-              ctx.fillStyle = '#ec4899';
-              ctx.beginPath();
-              ctx.roundRect(nx, endDy - (noteHeight / 2), nw, noteHeight, 8);
-              ctx.fill();
-            } else {
-              const nx = paddingX + (note.block * laneWidth) + 3;
-              const nw = laneWidth - 6;
-              ctx.fillStyle = '#2563eb';
-              ctx.beginPath();
-              ctx.roundRect(nx, endDy - (noteHeight / 2), nw, noteHeight, 6);
-              ctx.fill();
-            }
-          }
+          endDy = judgeY - ((endVisPos - curVisPos) * pixelsPerSec);
         }
 
+        // 始点も終点も完全に判定ライン（judgeY）より下（画面の下側）にいってしまった場合は完全にスキップ
+        if (dy > judgeY && (!isLong || endDy > judgeY)) {
+          return;
+        }
+
+        // 通過時のエフェクト発火判定（まだ hit しておらず、現在時刻がノーツの時間を過ぎたとき）
         if (isPlaying && !note.hit && curTime >= note.time) {
           note.hit = true;
           const hitX = (note.type === 3 || note.type === 4)
@@ -717,7 +689,55 @@
           triggerHitEffect(hitX, judgeY, hitColor);
         }
 
-        if (dy >= -20 && dy <= canvas.height + 20) {
+        // Long Note 胴体＆終点描画
+        if (isLong) {
+          const isSpace = (note.type === 4);
+          const x = isSpace ? paddingX : paddingX + (note.block * laneWidth);
+          const w = isSpace ? laneAreaWidth : laneWidth;
+
+          if (Math.max(dy, endDy) >= -50 && Math.min(dy, endDy) <= canvas.height + 50) {
+            // 判定ラインより下に行った部分は隠すため、描画の下限を judgeY にクリップする
+            const rawBodyY = Math.min(dy, endDy);
+            const rawBodyBottom = Math.max(dy, endDy);
+            
+            const bodyY = Math.max(rawBodyY, judgeY > rawBodyY ? rawBodyY : judgeY); // 上端
+            const bodyBottom = Math.min(rawBodyBottom, judgeY); // 下端を判定ラインにクランプ
+            const bodyH = bodyBottom - bodyY;
+
+            if (bodyH > 0) {
+              // 1. ロングノーツの胴体 ＆ 縁取り
+              ctx.fillStyle = isSpace ? 'rgba(236, 72, 153, 0.3)' : 'rgba(59, 130, 246, 0.3)';
+              ctx.fillRect(x + 4, bodyY, w - 8, bodyH);
+
+              ctx.strokeStyle = isSpace ? '#ec4899' : '#3b82f6';
+              ctx.lineWidth = 2;
+              ctx.strokeRect(x + 4, bodyY, w - 8, bodyH);
+            }
+
+            // 2. 終点パーツ（まだ判定ラインより上にいる場合のみ描画）
+            if (endDy <= judgeY) {
+              const noteHeight = 16;
+              if (isSpace) {
+                const nx = paddingX + 4;
+                const nw = laneAreaWidth - 8;
+                ctx.fillStyle = '#ec4899';
+                ctx.beginPath();
+                ctx.roundRect(nx, endDy - (noteHeight / 2), nw, noteHeight, 8);
+                ctx.fill();
+              } else {
+                const nx = paddingX + (note.block * laneWidth) + 3;
+                const nw = laneWidth - 6;
+                ctx.fillStyle = '#2563eb';
+                ctx.beginPath();
+                ctx.roundRect(nx, endDy - (noteHeight / 2), nw, noteHeight, 6);
+                ctx.fill();
+              }
+            }
+          }
+        }
+
+        // 通常ノーツ または ロングノーツの始点パーツの描画（判定ラインより上にいる場合のみ）
+        if (dy <= judgeY && dy >= -20) {
           const noteHeight = 16;
 
           if (note.type === 1 || note.type === 2) {
